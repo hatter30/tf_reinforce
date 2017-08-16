@@ -23,21 +23,18 @@ class ActorNetwork(object):
         self.network_params = tf.trainable_variables()
         
         # This Advantage will be provided by the Discount Reward
-        self.q_value = tf.placeholder("float", [None,1])
-        self.actions = tf.placeholder("float", [None,1])
-        eligibility = tf.log(self.actions - self.out) * self.q_value        # todo add gradient, apply_gradient
+        self.returns = tf.placeholder("float", [None,1])
+        self.actions = tf.placeholder("float", [None,self.a_dim])
+        
+        action_probabilities = tf.reduce_sum(tf.mul(self.out, self.actions), reduction_indices=[1])
+        eligibility = tf.log(action_probabilities) * self.returns        # todo add gradient, apply_gradient
         self.policy_loss = -tf.reduce_sum(eligibility)
         self.optimize = tf.train.AdamOptimizer(self.learning_rate).minimize(self.policy_loss)        
         
     def create_actor_network(self):
-        h_dim = 10
-        inputs = tf.placeholder("float", [None, self.s_dim])
-        
-        w1 = tf.get_variable("w1", [self.s_dim, h_dim])
-        h1 = tf.nn.sigmoid(tf.matmul(inputs, w1))
-        
-        w2 = tf.get_variable("w2", [h_dim, self.a_dim])
-        out = tf.nn.sigmoid(tf.matmul(h1, w2))               #todo action_bound
+        inputs = tf.placeholder("float", [None, self.s_dim])        
+        w = tf.get_variable("w1", [self.s_dim, self.a_dim])
+        out = tf.nn.softmax(tf.matmul(inputs, w))
         
         return inputs, out
         
@@ -45,7 +42,7 @@ class ActorNetwork(object):
         self.sess.run(self.optimize, feed_dict={
             self.inputs: inputs,
             self.actions: actions,
-            self.q_value: q_value
+            self.returns: q_value
         })
         
     def predict(self, inputs):
@@ -57,7 +54,7 @@ class ActorNetwork(object):
     def loss():
         return self.sess.run(self.policy_loss, feed_dict={
             self.inputs: inputs,
-            self.q_value: q_value
+            self.returns: q_value
         })
         
         
@@ -73,7 +70,7 @@ def get_discount_rewards(transitions):
         
 def train(sess, env, actor) :
     sess.run(tf.global_variables_initializer())    
-    epoch = 3000
+    epoch = 10000
     plt.ioff()
     fig = plt.figure()
     reward_list = []
@@ -90,7 +87,9 @@ def train(sess, env, actor) :
             action = 0 if np.random.uniform() < act_prob[0][0] else 1
             
             states.append(observation)
-            actions.append(np.array([action]))
+            actionblank = np.zeros(2)
+            actionblank[action] = 1
+            actions.append(actionblank)
             
             # take the acion in the environment
             old_observation = observation
@@ -127,6 +126,7 @@ def main(_):
         
         state_dim = env.observation_space.shape[0]
         action_dim = env.action_space.n
+        print(action_dim)
         # todo add action bound
         
         actor = ActorNetwork(sess, state_dim, action_dim, 0.01)
