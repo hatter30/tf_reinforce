@@ -20,48 +20,51 @@ class ActorNetwork(object):
         # Actor Network
         self.inputs, self.out = self.create_actor_network()
         
-        self.network_params = tf.trainable_variables()
+        # This returns will be provided by the Discount Reward
+        self.returns = tf.placeholder("float", [None,1], name='returns')
+        self.actions = tf.placeholder("float", [None,self.a_dim], name='actions')
         
-        # This Advantage will be provided by the Discount Reward
-        self.returns = tf.placeholder("float", [None,1])
-        self.actions = tf.placeholder("float", [None,self.a_dim])
+        # tf reward processing
+        self.tf_discounted_epr = self.tf_discount_rewards(self.returns)
+        tf_mean, tf_variance= tf.nn.moments(self.tf_discounted_epr, [0], shift=None, name="reward_moments")
+        self.tf_discounted_epr -= tf_mean
+        self.tf_discounted_epr /= tf.sqrt(tf_variance + 1e-6)
         
-        action_probabilities = tf.reduce_sum(tf.mul(self.out, self.actions), reduction_indices=[1])
-        eligibility = tf.log(action_probabilities) * self.returns        # todo add gradient, apply_gradient
-        self.policy_loss = -tf.reduce_sum(eligibility)
-        self.optimize = tf.train.AdamOptimizer(self.learning_rate).minimize(self.policy_loss)        
+        self.loss = tf.nn.l2_loss(self.actions-self.out)
+        optimizer = tf.train.AdamOptimizer(self.learning_rate)
+        grads = optimizer.compute_gradients(self.loss, var_list=tf.trainable_variables(), grad_loss=self.tf_discounted_epr)
+        self.optimize = optimizer.apply_gradients(grads)      
         
     def create_actor_network(self):
+        h_dim = 10
         inputs = tf.placeholder("float", [None, self.s_dim])        
-        w = tf.get_variable("w1", [self.s_dim, self.a_dim])
-        out = tf.nn.softmax(tf.matmul(inputs, w))
+        w1 = tf.get_variable("w1", [self.s_dim, h_dim], initializer=tf.contrib.layers.xavier_initializer())
+        h1 = tf.nn.relu(tf.matmul(inputs, w1))
+        
+        w2 = tf.get_variable("w2", [h_dim, self.a_dim], initializer=tf.contrib.layers.xavier_initializer())
+        out = tf.nn.softmax(tf.matmul(h1, w2))
         
         return inputs, out
         
-    def train(self, inputs, actions, q_value):
-        self.sess.run(self.optimize, feed_dict={
-            self.inputs: inputs,
-            self.actions: actions,
-            self.returns: q_value
-        })
+    def train(self, inputs, actions, returns):
+        feed = {self.inputs: np.vstack(inputs), self.actions: np.vstack(actions), self.returns: np.vstack(returns)}        
+        _, output2 = self.sess.run([self.optimize, self.tf_discounted_epr], feed)
         
     def predict(self, inputs):
         return self.sess.run(self.out, feed_dict={
             self.inputs: inputs
         })
-   
-    @property
-    def loss():
-        return self.sess.run(self.policy_loss, feed_dict={
-            self.inputs: inputs,
-            self.returns: q_value
-        })
+        
+    def tf_discount_rewards(self, tf_r):
+        discount_f = lambda a, v: a*gamma + v;
+        tf_r_reverse = tf.scan(discount_f, tf.reverse(tf_r,[True, False]))
+        tf_discounted_r = tf.reverse(tf_r_reverse,[True, False])
+        return tf_discounted_r
         
         
 def get_discount_rewards(transitions):
     discounted_r = [np.zeros([1]) for _ in range(len(transitions))]
     running_add = 0
-    #print(len(transitions))
     for t in reversed(range(0, len(transitions))):
         running_add = running_add * gamma + transitions[t][2]
         discounted_r[t][0] = running_add
@@ -70,7 +73,7 @@ def get_discount_rewards(transitions):
         
 def train(sess, env, actor) :
     sess.run(tf.global_variables_initializer())    
-    epoch = 10000
+    epoch = 3000
     plt.ioff()
     fig = plt.figure()
     reward_list = []
@@ -79,45 +82,33 @@ def train(sess, env, actor) :
         observation = env.reset()
         states = []
         actions = []
-        transitions = []
+        rewards = []
         reward_sum = 0        
         for _ in range(1000):
             obs_vector = np.expand_dims(observation, axis=0)
-            act_prob = actor.predict(obs_vector)
-            action = 0 if np.random.uniform() < act_prob[0][0] else 1
-            
-            states.append(observation)
-            actionblank = np.zeros(2)
-            actionblank[action] = 1
-            actions.append(actionblank)
+            act_prob = actor.predict(obs_vector); act_prob = act_prob[0,:]
+            action = np.random.choice(env.action_space.n, p=act_prob)          
+            actionblank = np.zeros_like(act_prob);  actionblank[action] = 1
             
             # take the acion in the environment
             old_observation = observation
             observation, reward, done, info = env.step(action)
-            transitions.append((old_observation, action, reward))
             reward_sum += reward
+            
+            states.append(old_observation); actions.append(actionblank); rewards.append(reward)
             
             if done:
                 print("episode : " + str(episode_num) + ", reward : " + str(reward_sum))
-                reward_list.append(reward_sum)
-                
+                reward_list.append(reward_sum)                
                 break
-                
-        future_reward = get_discount_rewards(transitions)
+       
         
-        advantages = future_reward - np.mean(future_reward)
-        advantages /= np.std(future_reward)        
-        
-        actor.train(states, actions, advantages)
+        actor.train(states, actions, rewards)
         
     plt.plot(reward_list)
     plt.savefig('myfig.png')
     plt.close()
 
-         
-            
-        
-    
 def main(_):
     with tf.Session() as sess:
     
