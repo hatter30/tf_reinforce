@@ -77,6 +77,7 @@ def train(sess, env, actor) :
     plt.ioff()
     fig = plt.figure()
     reward_list = []
+    running_reward = None
     for episode_num in range(epoch):
     
         observation = env.reset()
@@ -98,12 +99,20 @@ def train(sess, env, actor) :
             states.append(old_observation); actions.append(actionblank); rewards.append(reward)
             
             if done:
-                print("episode : " + str(episode_num) + ", reward : " + str(reward_sum))
+                # update running reward
+                running_reward = reward_sum if running_reward is None else running_reward * 0.99 + reward_sum * 0.01
+                
+                print("episode : %4d" % episode_num + ", reward %4d: " % reward_sum + ", reward mean: %4.3f" % running_reward)
                 reward_list.append(reward_sum)                
-                break
-       
-        
+                break       
+
+        if running_reward >= 200:
+            print("CartPole solved!!!!!")
+            break
+                
         actor.train(states, actions, rewards)
+        
+
         
     plt.plot(reward_list)
     plt.savefig('myfig.png')
@@ -113,12 +122,9 @@ def main(_):
     with tf.Session() as sess:
     
         env = gym.make('CartPole-v0')
-        # todo add random seed
         
         state_dim = env.observation_space.shape[0]
         action_dim = env.action_space.n
-        print(action_dim)
-        # todo add action bound
         
         actor = ActorNetwork(sess, state_dim, action_dim, 0.01)
         
