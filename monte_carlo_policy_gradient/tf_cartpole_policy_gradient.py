@@ -7,6 +7,8 @@ import matplotlib as mlp
 mlp.use('Agg')
 import matplotlib.pyplot as plt
 
+import utils
+
 gamma = 0.99
 
 class ActorNetwork(object):
@@ -26,9 +28,7 @@ class ActorNetwork(object):
         
         # tf reward processing
         self.tf_discounted_epr = self.tf_discount_rewards(self.returns)
-        tf_mean, tf_variance= tf.nn.moments(self.tf_discounted_epr, [0], shift=None, name="reward_moments")
-        self.tf_discounted_epr -= tf_mean
-        self.tf_discounted_epr /= tf.sqrt(tf_variance + 1e-6)
+        self.tf_discounted_epr = utils.standardize(self.tf_discounted_epr)
         
         self.loss = tf.nn.l2_loss(self.actions-self.out)
         optimizer = tf.train.AdamOptimizer(self.learning_rate)
