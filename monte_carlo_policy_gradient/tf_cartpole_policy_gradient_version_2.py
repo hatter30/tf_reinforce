@@ -31,6 +31,7 @@ class ActorNetwork(object):
         optimizer = tf.train.AdamOptimizer(self.learning_rate)
         self.action_prob = tf.reduce_sum(self.actions * self.out, reduction_indices=1)
         self.loss = -tf.log(self.action_prob) * self.tf_discounted_epr
+        #self.optimize = optimizer.minimize(self.loss)
         grads_and_vars = optimizer.compute_gradients(self.loss, network_params)
         self.optimize = optimizer.apply_gradients(grads_and_vars)
         
