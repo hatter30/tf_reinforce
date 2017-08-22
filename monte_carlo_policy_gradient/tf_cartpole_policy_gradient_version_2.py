@@ -7,6 +7,8 @@ import matplotlib as mlp
 mlp.use('Agg')
 import matplotlib.pyplot as plt
 
+import utils
+
 gamma = 0.99
 
 class ActorNetwork(object):
@@ -26,7 +28,7 @@ class ActorNetwork(object):
         self.actions = tf.placeholder("float", [None,self.a_dim], name='actions')
         
         # tf reward processing
-        self.tf_discounted_epr = self.tf_discount_rewards(self.returns)
+        self.tf_discounted_epr = utils.discount_rewards(self.returns)
 
         optimizer = tf.train.AdamOptimizer(self.learning_rate)
         self.action_prob = tf.reduce_sum(self.actions * self.out, reduction_indices=1)
@@ -57,13 +59,7 @@ class ActorNetwork(object):
             self.inputs: inputs
         })
         
-    def tf_discount_rewards(self, tf_r):
-        discount_f = lambda a, v: a*gamma + v
-        tf_r_reverse = tf.scan(discount_f, tf.reverse(tf_r,[True, False]))
-        tf_discounted_r = tf.reverse(tf_r_reverse,[True, False])
-        return tf_discounted_r
-        
-        
+
 def get_discount_rewards(transitions):
     discounted_r = [np.zeros([1]) for _ in range(len(transitions))]
     running_add = 0
