@@ -60,16 +60,7 @@ class ActorNetwork(object):
         tf_r_reverse = tf.scan(discount_f, tf.reverse(tf_r,[True, False]))
         tf_discounted_r = tf.reverse(tf_r_reverse,[True, False])
         return tf_discounted_r
-        
-        
-def get_discount_rewards(transitions):
-    discounted_r = [np.zeros([1]) for _ in range(len(transitions))]
-    running_add = 0
-    for t in reversed(range(0, len(transitions))):
-        running_add = running_add * gamma + transitions[t][2]
-        discounted_r[t][0] = running_add
-        
-    return discounted_r    
+
         
 def train(sess, env, actor) :
     sess.run(tf.global_variables_initializer())    
