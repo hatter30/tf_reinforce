@@ -19,6 +19,7 @@ class ActorNetwork(object):
         
         # Actor Network
         self.inputs, self.out = self.create_actor_network()
+        network_params = tf.trainable_variables()
         
         # This returns will be provided by the Discount Reward
         self.returns = tf.placeholder("float", [None,1], name='returns')
@@ -30,7 +31,8 @@ class ActorNetwork(object):
         optimizer = tf.train.AdamOptimizer(self.learning_rate)
         self.action_prob = tf.reduce_sum(self.actions * self.out, reduction_indices=1)
         self.loss = -tf.log(self.action_prob) * self.tf_discounted_epr
-        self.optimize = optimizer.minimize(self.loss)
+        grads_and_vars = optimizer.compute_gradients(self.loss, network_params)
+        self.optimize = optimizer.apply_gradients(grads_and_vars)
         
     def create_actor_network(self):
         h_dim = 10
