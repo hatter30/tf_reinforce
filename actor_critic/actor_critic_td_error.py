@@ -24,12 +24,12 @@ class ActorNetwork(object):
         network_params = tf.trainable_variables()
         
         # This returns will be provided by the Discount Reward
-        self.predicted_q_value = tf.placeholder("float", [None,1], name='returns')
+        self._target = tf.placeholder("float", [None,1], name='returns')
         self.actions = tf.placeholder("float", [None,self.a_dim], name='actions')
 
         optimizer = tf.train.AdamOptimizer(self.learning_rate)
         self.action_prob = tf.reduce_sum(self.actions * self.out, reduction_indices=1)
-        self.loss = -tf.log(self.action_prob) * self.predicted_q_value
+        self.loss = -tf.log(self.action_prob) * self._target
         #self.optimize = optimizer.minimize(self.loss)
         grads_and_vars = optimizer.compute_gradients(self.loss, network_params)
         self.optimize = optimizer.apply_gradients(grads_and_vars)
@@ -45,8 +45,8 @@ class ActorNetwork(object):
         
         return inputs, out
         
-    def train(self, inputs, actions, q_values):
-        feed = {self.inputs: np.vstack(inputs), self.actions: np.vstack(actions), self.predicted_q_value: np.vstack(q_values)}
+    def train(self, inputs, actions, target):
+        feed = {self.inputs: np.vstack(inputs), self.actions: np.vstack(actions), self._target: np.vstack(target)}
         _, output2 = self.sess.run([self.optimize, self.action_prob], feed)
         
     def predict(self, inputs):
@@ -64,14 +64,10 @@ class CriticNetwork(object):
         # Critic Network
         self.inputs, self._out = self.create_actor_network()
         
-        # This returns will be provided by the Discount Reward
-        self.returns = tf.placeholder("float", [None,1], name='returns')
-        
-        # tf reward processing
-        self._discounted_returns = utils.tf_discount_rewards(self.returns)
+        self._target = tf.placeholder("float", [None,1], name='targets')
 
         optimizer = tf.train.AdamOptimizer(self.learning_rate)
-        self._loss = tf.nn.l2_loss(self._out - self._discounted_returns)
+        self._loss = tf.nn.l2_loss(self._out - self._target)
         self.optimize = optimizer.minimize(self._loss)
         
     def create_actor_network(self):
@@ -84,8 +80,8 @@ class CriticNetwork(object):
         calculated = tf.matmul(h1, w2) + b2
         return inputs, calculated
         
-    def train(self, inputs, returns):
-        feed = {self.inputs: np.vstack(inputs), self.returns: np.vstack(returns)}
+    def train(self, inputs, target):
+        feed = {self.inputs: np.vstack(inputs), self._target: np.vstack(target)}
         _, loss = self.sess.run([self.optimize, self._loss], feed)
         return loss
         
@@ -105,6 +101,7 @@ def train(sess, env, actor, critic) :
     
         observation = env.reset()
         states = []
+        next_states = []
         actions = []
         rewards = []
         reward_sum = 0        
@@ -122,6 +119,7 @@ def train(sess, env, actor, critic) :
             reward_sum += reward
             
             states.append(old_observation); actions.append(actionblank); rewards.append(reward)
+            next_states.append(observation)
             
             if done:
                 # update running reward
@@ -134,11 +132,13 @@ def train(sess, env, actor, critic) :
         if running_reward >= 180:
             print("CartPole solved!!!!!")
             break
-
-        loss = critic.train(states, rewards)
-        predicted_q_values = critic.predict(states)
-
-        actor.train(states, actions, predicted_q_values)
+            
+        value_next = critic.predict(next_states)
+        td_target = np.vstack(rewards) + 0.99 * value_next
+        td_error = td_target - critic.predict(states)
+            
+        loss = critic.train(states, td_target)
+        actor.train(states, actions, td_error)
         
     plt.plot(reward_list)
     plt.savefig('myfig.png')
